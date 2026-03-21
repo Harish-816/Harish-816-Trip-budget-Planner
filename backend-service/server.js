@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 3001;
 
 // Configuration
 // In a real scalability scenario, these would be env vars
-const CLASSMATE_API_URL = process.env.CLASSMATE_API_URL || 'http://localhost:4000/api/split';
-const PUBLIC_CURRENCY_API = 'https://api.frankfurter.app/latest'; // Free Public API
+const CLASSMATE_API_URL = process.env.CLASSMATE_API_URL || 'http://costsplitting-app-env.eba-cpt2wyzw.eu-north-1.elasticbeanstalk.com/split/weighted';
+const PUBLIC_CURRENCY_API = 'https://2p9nh463r1.execute-api.us-east-1.amazonaws.com/prod/convert';
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -131,8 +131,28 @@ app.get('/api/trips/:id/calculate', async (req, res) => {
         // Step B: Call Classmate API to calculate split
         console.log("Calling Classmate API...");
         try {
-            const response = await axios.post(CLASSMATE_API_URL, { expenses: normalizedExpenses });
-            const transactions = response.data.transactions;
+            const totalAmount = normalizedExpenses.reduce((sum, e) => sum + e.amount, 0);
+            const payload = {
+                total_amount: totalAmount,
+                participants: trip.participants.map(p => {
+                    const name = typeof p === 'string' ? p : p.name;
+                    const weight = typeof p === 'string' ? 1 : (Number(p.weight) || 1);
+                    return { name, weight };
+                })
+            };
+            
+            const response = await axios.post(CLASSMATE_API_URL, payload);
+            
+            let transactions = [];
+            if (Array.isArray(response.data)) {
+                transactions = response.data;
+            } else if (response.data.participants) {
+                transactions = response.data.participants;
+            } else if (response.data.transactions) {
+                transactions = response.data.transactions;
+            } else if (response.data.settlements) {
+                transactions = response.data.settlements;
+            }
 
             res.json({
                 tripName: trip.name,
@@ -168,11 +188,11 @@ async function normalizeExpenses(expenses, baseCurrency) {
         } else {
             // Call Public API
             try {
-                // Example: Convert EUR to USD
-                // https://api.frankfurter.app/latest?amount=10&from=EUR&to=USD
+                // Example: Convert EUR to USD using Classmate API
+                // https://2p9nh463r1.execute-api.us-east-1.amazonaws.com/prod/convert?from=EUR&to=USD&amount=10
                 const url = `${PUBLIC_CURRENCY_API}?amount=${exp.amount}&from=${exp.currency}&to=${baseCurrency}`;
                 const apiRes = await axios.get(url);
-                const convertedAmount = apiRes.data.rates[baseCurrency];
+                const convertedAmount = apiRes.data.result;
 
                 convertedExpenses.push({
                     ...exp,

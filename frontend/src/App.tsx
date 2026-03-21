@@ -6,12 +6,16 @@ import { PlusCircle, Wallet } from 'lucide-react';
 const API_URL = 'http://localhost:3001/api'; // User Backend
 
 // Types
+interface Participant {
+  name: string;
+  weight: number;
+}
+
 interface Trip {
   id: string;
   name: string;
-  participants: string[];
+  participants: Participant[];
   baseCurrency: string;
-  exercises?: Expense[]; // typo in backend? no, 'expenses'
   expenses: Expense[];
 }
 
@@ -26,7 +30,7 @@ interface Expense {
 
 interface CalculationResult {
   totalExpenses: number;
-  settlements: { from: string; to: string; amount: string }[];
+  settlements: any[];
 }
 
 // --- Components ---
@@ -36,11 +40,25 @@ function Home() {
   const [name, setName] = useState('');
   const [participants, setParticipants] = useState('');
   const [currency, setCurrency] = useState('USD');
+  const [currencies, setCurrencies] = useState<string[]>(['USD', 'EUR', 'GBP']);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    axios.get('https://2p9nh463r1.execute-api.us-east-1.amazonaws.com/prod/currencies')
+      .then(res => {
+        if (res.data && res.data.currencies) {
+          setCurrencies(res.data.currencies);
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    const partsArray = participants.split(',').map(p => p.trim()).filter(p => p);
+    const partsArray = participants.split(',').map(p => {
+      const [n, w] = p.split(':');
+      return { name: n ? n.trim() : '', weight: w ? parseFloat(w) : 1 };
+    }).filter(p => p.name);
     try {
       const res = await axios.post(`${API_URL}/trips`, {
         name,
@@ -74,10 +92,10 @@ function Home() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Participants (comma separated)</label>
+            <label className="block text-sm font-medium text-gray-700">Participants (e.g. Hari:2, John:1)</label>
             <input
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Hari, John, Sarah"
+              placeholder="Hari:2, John:1, Sarah"
               value={participants} onChange={e => setParticipants(e.target.value)} required
             />
           </div>
@@ -86,9 +104,7 @@ function Home() {
             <select
               className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               value={currency} onChange={e => setCurrency(e.target.value)}>
-              <option value="USD">USD ($)</option>
-              <option value="EUR">EUR (€)</option>
-              <option value="GBP">GBP (£)</option>
+              {currencies.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
@@ -124,8 +140,10 @@ function TripDashboard() {
     try {
       const res = await axios.get(`${API_URL}/trips/${id}`);
       setTrip(res.data);
-      // setPayer(res.data.participants[0]); // Don't reset payer every time
-      if (!payer && res.data.participants.length > 0) setPayer(res.data.participants[0]);
+      if (!payer && res.data.participants.length > 0) {
+        const firstP = res.data.participants[0];
+        setPayer(typeof firstP === 'string' ? firstP : firstP.name);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -143,7 +161,7 @@ function TripDashboard() {
         amount: amount,
         currency: trip.baseCurrency, // simplified
         payer: payer,
-        involves: trip.participants
+        involves: trip.participants.map(p => typeof p === 'string' ? p : p.name)
       });
       setDesc('');
       setAmount('');
@@ -220,7 +238,11 @@ function TripDashboard() {
                     <label className="block text-sm text-gray-700">Paid By</label>
                     <select value={payer} onChange={e => setPayer(e.target.value)}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2">
-                      {trip.participants.map(p => <option key={p} value={p}>{p}</option>)}
+                      {trip.participants.map(p => {
+                        const name = typeof p === 'string' ? p : p.name;
+                        const weight = typeof p === 'string' ? 1 : p.weight;
+                        return <option key={name} value={name}>{name} (W: {weight})</option>;
+                      })}
                     </select>
                   </div>
                   <button disabled={isSubmitting} type="submit"
@@ -279,18 +301,38 @@ function TripDashboard() {
                   {calculation.settlements.length === 0 ? (
                     <div className="text-center text-green-600 font-medium">All settled up! No one owes anything.</div>
                   ) : (
-                    calculation.settlements.map((tx, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold text-gray-900">{tx.from}</span>
-                          <span className="text-gray-400">owes</span>
-                          <span className="font-semibold text-gray-900">{tx.to}</span>
-                        </div>
-                        <div className="font-bold text-green-600">
-                          {trip.baseCurrency} {tx.amount}
-                        </div>
-                      </div>
-                    ))
+                    calculation.settlements.map((tx, idx) => {
+                      if (tx.from && tx.to) {
+                        return (
+                          <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-3">
+                              <span className="font-semibold text-gray-900">{tx.from}</span>
+                              <span className="text-gray-400">owes</span>
+                              <span className="font-semibold text-gray-900">{tx.to}</span>
+                            </div>
+                            <div className="font-bold text-green-600">
+                              {trip.baseCurrency} {tx.amount}
+                            </div>
+                          </div>
+                        );
+                      } else if (tx.name) {
+                        return (
+                          <div key={idx} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:shadow-md transition-shadow">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-gray-900 text-lg">{tx.name}</span>
+                              <span className="text-gray-500 text-sm">Weight: {tx.weight}</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm text-gray-500">Total Share</div>
+                              <div className="font-bold text-blue-600 text-lg">
+                                {trip.baseCurrency} {typeof tx.share === 'number' ? tx.share.toFixed(2) : tx.share}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })
                   )}
                 </div>
               </div>

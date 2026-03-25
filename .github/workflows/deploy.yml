@@ -1,0 +1,49 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute deployment commands via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "Starting deployment..."
+            
+            # 1. Navigate to the project directory
+            # (Adjust 'Harish-816-Trip-budget-Planner' if your folder name is different on the server)
+            cd Harish-816-Trip-budget-Planner
+            
+            # 2. Pull the latest code from GitHub
+            git pull origin main
+            
+            # 3. Update Backend Service
+            echo "Updating Backend Service..."
+            cd backend-service
+            npm install
+            pm2 restart budget-backend
+            cd ..
+            
+            # 4. Update Classmate API
+            echo "Updating Classmate API..."
+            cd classmate-api
+            npm install
+            pm2 restart classmate-api
+            cd ..
+            
+            # 5. Update Frontend
+            echo "Updating Frontend..."
+            cd frontend
+            npm install
+            pm2 restart budget-frontend
+            
+            echo "Deployment successful!"

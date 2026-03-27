@@ -3,7 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } 
 import axios from 'axios';
 import { PlusCircle, Wallet } from 'lucide-react';
 
-const API_URL = 'http://localhost:3001/api'; // User Backend
+// Use the EC2 public IP for production. Change to http://localhost:3001/api for local development.
+const API_URL = 'http://44.215.53.128:3001/api';
 
 // Types
 interface Participant {
@@ -44,13 +45,17 @@ function Home() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    axios.get('https://2p9nh463r1.execute-api.us-east-1.amazonaws.com/prod/currencies')
+    // Fetch available currencies from Frankfurter public API
+    axios.get('https://api.frankfurter.app/currencies')
       .then(res => {
-        if (res.data && res.data.currencies) {
-          setCurrencies(res.data.currencies);
+        if (res.data) {
+          setCurrencies(Object.keys(res.data));
         }
       })
-      .catch(console.error);
+      .catch(() => {
+        // Fallback to common currencies if API fails
+        setCurrencies(['USD', 'EUR', 'GBP', 'INR', 'JPY', 'AUD', 'CAD', 'CHF']);
+      });
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {

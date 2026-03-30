@@ -3,8 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useParams } 
 import axios from 'axios';
 import { PlusCircle, Wallet } from 'lucide-react';
 
-// Use the EC2 public IP for production. Change to http://localhost:3001/api for local development.
-const API_URL = 'http://44.215.53.128:3001/api';
+// Automatically uses localhost for local dev, and EC2 IP for production (AWS)
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 // Types
 interface Participant {
